@@ -1,0 +1,26 @@
+{
+  "name": "milkmoovement-scraper",
+  "version": "1.0.0",
+  "description": "Automated data extraction from UDA MilkMoovement portal",
+  "main": "index.js",
+  "scripts": {
+    "start": "node index.js",
+    "dev": "node index.js",
+    "test": "echo \"Error: no test specified\" && exit 1"
+  },
+  "keywords": [
+    "puppeteer",
+    "scraping",
+    "dairy",
+    "automation"
+  ],
+  "author": "Seth Nichols",
+  "license": "MIT",
+  "type": "commonjs",
+  "dependencies": {
+    "@supabase/supabase-js": "^2.38.0",
+    "dotenv": "^17.2.1",
+    "node-cron": "^3.0.3",
+    "puppeteer": "^24.15.0"
+  }
+}

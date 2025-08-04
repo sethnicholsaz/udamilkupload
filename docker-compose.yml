@@ -1,0 +1,32 @@
+version: '3.8'
+
+services:
+  milkmoovement-scraper:
+    build: .
+    container_name: milkmoovement-scraper
+    restart: unless-stopped
+    environment:
+      - NODE_ENV=production
+      - UDA_EMAIL=${UDA_EMAIL}
+      - UDA_PASSWORD=${UDA_PASSWORD}
+      - SUPABASE_URL=${SUPABASE_URL}
+      - SUPABASE_ANON_KEY=${SUPABASE_ANON_KEY}
+      - PRODUCER_ID=${PRODUCER_ID:-60cce07b8ada14e90f0783b7}
+      - CRON_SCHEDULE=${CRON_SCHEDULE:-0 6 * * *}
+      - TZ=${TZ:-America/Phoenix}
+      - PORT=${PORT:-3000}
+    ports:
+      - "3000:3000"  # Health check endpoint
+    volumes:
+      - ./logs:/app/logs  # Optional: for log persistence
+    healthcheck:
+      test: ["CMD", "wget", "--quiet", "--tries=1", "--spider", "http://localhost:3000/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 40s
+    logging:
+      driver: "json-file"
+      options:
+        max-size: "10m"
+        max-file: "3"
