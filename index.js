@@ -173,7 +173,7 @@ async function runScraper() {
   }
 
   const browser = await puppeteer.launch({ 
-    headless: process.env.NODE_ENV === 'production' ? true : false, // Show browser in development
+    headless: true, // Always headless for Docker compatibility
     slowMo: 50,
     args: [
       '--no-sandbox',
@@ -181,7 +181,9 @@ async function runScraper() {
       '--disable-dev-shm-usage',
       '--disable-accelerated-2d-canvas',
       '--no-first-run',
-      '--disable-gpu'
+      '--disable-gpu',
+      '--disable-web-security',
+      '--disable-features=VizDisplayCompositor'
     ]
   });
   
