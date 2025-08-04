@@ -28,8 +28,8 @@ RUN npm ci --only=production
 COPY . .
 
 # Create non-root user for security
-RUN addgroup -g 1001 -S nodejs
-RUN adduser -S nodejs -u 1001
+RUN groupadd --gid 1001 nodejs \
+  && useradd --uid 1001 --gid nodejs --shell /bin/bash --create-home nodejs
 
 # Create downloads directory and set permissions
 RUN mkdir -p downloads && chown -R nodejs:nodejs /app
