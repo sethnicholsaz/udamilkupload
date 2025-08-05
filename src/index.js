@@ -13,6 +13,7 @@ const config = {
   email: process.env.UDA_EMAIL,
   password: process.env.UDA_PASSWORD,
   producerId: process.env.PRODUCER_ID || "60cce07b8ada14e90f0783b7",
+  companyId: process.env.COMPANY_ID || "2da00486-874e-41ef-b8d4-07f3ae20868a",
   cronSchedule: process.env.CRON_SCHEDULE || "0 6 * * *", // Default: 6 AM daily
   timezone: process.env.TZ || "America/Phoenix"
 };
@@ -92,6 +93,7 @@ async function storeDataInSupabase(data, startDate, endDate) {
         date_range_start: startDate,
         date_range_end: endDate,
         producer_id: config.producerId,
+        company_id: config.companyId,
         raw_data: data,
         record_count: data.productionData ? data.productionData.length : 0,
         current_period_total_production: data.currentPeriodTotalProduction,
@@ -111,6 +113,7 @@ async function storeDataInSupabase(data, startDate, endDate) {
       const productionRecords = data.productionData.map(record => ({
         extract_date: new Date().toISOString(),
         producer_id: config.producerId,
+        company_id: config.companyId,
         pickup_id: record.id,
         pickup_date: record.pickup_date,
         tank_number: record.tank_number,
@@ -123,7 +126,7 @@ async function storeDataInSupabase(data, startDate, endDate) {
         protein: record.protein || null,
         lactose: record.lactose || null,
         solids_not_fat: record.solids_not_fat || null,
-        somatic_cell_count: record.somatic_cell_count || null,
+        somatic_cell_count: record.somatic_cell_count ? parseInt(record.somatic_cell_count) : null,
         milk_urea_nitrogen: record.milk_urea_nitrogen || null,
         freeze_point: record.freeze_point || null,
         sample_barcodes: record.sample_barcodes || [],
@@ -351,7 +354,14 @@ const server = http.createServer((req, res) => {
 
 // Start the application
 if (process.env.NODE_ENV === 'production') {
+  // Validate cron schedule first
+  if (!cron.validate(config.cronSchedule)) {
+    console.error(`❌ Invalid cron schedule: ${config.cronSchedule}`);
+    process.exit(1);
+  }
+  
   console.log(`📅 Scheduling cron job: ${config.cronSchedule} (${config.timezone})`);
+  console.log(`🚫 Production mode - scraper will only run on schedule, not on startup`);
   
   // Schedule the scraper to run on cron schedule
   cron.schedule(config.cronSchedule, () => {
@@ -366,6 +376,7 @@ if (process.env.NODE_ENV === 'production') {
   server.listen(port, () => {
     console.log(`🌐 Health check server running on port ${port}`);
     console.log(`🎯 Next scheduled run: ${config.cronSchedule}`);
+    console.log(`⚠️  Container will NOT run scraper immediately - waiting for scheduled time`);
   });
   
 } else {

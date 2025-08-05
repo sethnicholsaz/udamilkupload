@@ -7,6 +7,7 @@ CREATE TABLE IF NOT EXISTS uda_data_extracts (
     date_range_start DATE NOT NULL,
     date_range_end DATE NOT NULL,
     producer_id TEXT NOT NULL,
+    company_id UUID NOT NULL,
     raw_data JSONB NOT NULL,
     record_count INTEGER,
     current_period_total_production NUMERIC,
@@ -23,6 +24,7 @@ CREATE TABLE IF NOT EXISTS uda_production_records (
     id BIGSERIAL PRIMARY KEY,
     extract_date TIMESTAMPTZ NOT NULL,
     producer_id TEXT NOT NULL,
+    company_id UUID NOT NULL,
     pickup_id TEXT NOT NULL,
     pickup_date TIMESTAMPTZ NOT NULL,
     tank_number TEXT,
@@ -50,10 +52,12 @@ CREATE TABLE IF NOT EXISTS uda_production_records (
 -- Indexes for better query performance
 CREATE INDEX IF NOT EXISTS idx_uda_extracts_date ON uda_data_extracts(extract_date);
 CREATE INDEX IF NOT EXISTS idx_uda_extracts_producer ON uda_data_extracts(producer_id);
+CREATE INDEX IF NOT EXISTS idx_uda_extracts_company ON uda_data_extracts(company_id);
 CREATE INDEX IF NOT EXISTS idx_uda_extracts_date_range ON uda_data_extracts(date_range_start, date_range_end);
 
 CREATE INDEX IF NOT EXISTS idx_uda_records_pickup_date ON uda_production_records(pickup_date);
 CREATE INDEX IF NOT EXISTS idx_uda_records_producer ON uda_production_records(producer_id);
+CREATE INDEX IF NOT EXISTS idx_uda_records_company ON uda_production_records(company_id);
 CREATE INDEX IF NOT EXISTS idx_uda_records_tank ON uda_production_records(tank_number);
 CREATE INDEX IF NOT EXISTS idx_uda_records_extract_date ON uda_production_records(extract_date);
 

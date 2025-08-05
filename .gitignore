@@ -5,6 +5,7 @@ yarn-error.log*
 
 # Environment files
 .env
+.env.example
 .env.local
 .env.development.local
 .env.test.local
@@ -39,11 +40,8 @@ jspm_packages/
 # Yarn Integrity file
 .yarn-integrity
 
-# Downloads and screenshots
+# Downloads
 downloads/
-*.png
-*.jpg
-*.jpeg
 
 # Logs
 logs/
@@ -52,3 +50,12 @@ logs/
 # Temporary files
 .DS_Store
 Thumbs.db
+
+# Scripts folder (utility and test scripts)
+scripts/
+
+# Data folder (contains sensitive production data)
+data/
+
+# Screenshots folder (debug images)
+screenshots/
