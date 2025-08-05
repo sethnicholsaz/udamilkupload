@@ -15,7 +15,7 @@ const config = {
   producerId: process.env.PRODUCER_ID || "60cce07b8ada14e90f0783b7",
   companyId: process.env.COMPANY_ID || "2da00486-874e-41ef-b8d4-07f3ae20868a",
   cronSchedule: process.env.CRON_SCHEDULE || "0 6 * * *", // Default: 6 AM daily
-  reportSchedule: process.env.REPORT_SCHEDULE || "0 12 * * *", // Default: 12 PM daily
+  reportSchedule: process.env.REPORT_SCHEDULE || "30 12 * * *", // Default: 12:30 PM daily
   timezone: process.env.TZ || "America/Phoenix",
   ntfyUrl: process.env.NTFY_URL || "https://ntfy.sh/adc-milk",
   ntfyEnabled: process.env.NTFY_ENABLED !== "false"
