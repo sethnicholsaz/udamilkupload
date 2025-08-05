@@ -15,7 +15,10 @@ const config = {
   producerId: process.env.PRODUCER_ID || "60cce07b8ada14e90f0783b7",
   companyId: process.env.COMPANY_ID || "2da00486-874e-41ef-b8d4-07f3ae20868a",
   cronSchedule: process.env.CRON_SCHEDULE || "0 6 * * *", // Default: 6 AM daily
-  timezone: process.env.TZ || "America/Phoenix"
+  reportSchedule: process.env.REPORT_SCHEDULE || "0 12 * * *", // Default: 12 PM daily
+  timezone: process.env.TZ || "America/Phoenix",
+  ntfyUrl: process.env.NTFY_URL || "https://ntfy.sh/adc-milk",
+  ntfyEnabled: process.env.NTFY_ENABLED !== "false"
 };
 
 // Function to make direct API calls with authentication token
@@ -158,6 +161,183 @@ async function storeDataInSupabase(data, startDate, endDate) {
   } catch (error) {
     console.error('❌ Supabase storage error:', error.message);
     return false;
+  }
+}
+
+// Function to send ntfy notification
+async function sendNtfyNotification(title, message, priority = 'default') {
+  if (!config.ntfyEnabled) {
+    console.log('📱 ntfy notifications disabled');
+    return;
+  }
+
+  try {
+    const response = await fetch(config.ntfyUrl, {
+      method: 'POST',
+      headers: {
+        'Title': title,
+        'Priority': priority
+      },
+      body: message
+    });
+
+    if (response.ok) {
+      console.log('📱 ntfy notification sent successfully');
+    } else {
+      console.error('❌ ntfy notification failed:', response.status);
+    }
+  } catch (error) {
+    console.error('❌ ntfy notification error:', error.message);
+  }
+}
+
+// Function to calculate production averages from database
+async function getProductionAverages() {
+  try {
+    const today = new Date();
+    const twoDaysAgo = new Date(today.getTime() - 2 * 24 * 60 * 60 * 1000);
+    const sevenDaysAgo = new Date(today.getTime() - 7 * 24 * 60 * 60 * 1000);
+    const thirtyDaysAgo = new Date(today.getTime() - 30 * 24 * 60 * 60 * 1000);
+
+    // Get production data for different time periods
+    const { data: twoDayData } = await supabase
+      .from('uda_production_records')
+      .select('pickup_amount, fat, protein, somatic_cell_count')
+      .eq('company_id', config.companyId)
+      .gte('pickup_date', twoDaysAgo.toISOString())
+      .not('pickup_amount', 'is', null);
+
+    const { data: sevenDayData } = await supabase
+      .from('uda_production_records')
+      .select('pickup_amount, fat, protein, somatic_cell_count')
+      .eq('company_id', config.companyId)
+      .gte('pickup_date', sevenDaysAgo.toISOString())
+      .not('pickup_amount', 'is', null);
+
+    const { data: thirtyDayData } = await supabase
+      .from('uda_production_records')
+      .select('pickup_amount, fat, protein, somatic_cell_count')
+      .eq('company_id', config.companyId)
+      .gte('pickup_date', thirtyDaysAgo.toISOString())
+      .not('pickup_amount', 'is', null);
+
+    // Calculate daily production averages (total production / number of days)
+    const calculateDailyAverage = (data, days) => {
+      if (!data || data.length === 0) return 0;
+      const totalProduction = data.reduce((sum, item) => sum + Number(item.pickup_amount || 0), 0);
+      return totalProduction / days;
+    };
+
+    // Calculate weighted averages for quality metrics
+    const calculateWeightedAverage = (data, field) => {
+      if (!data || data.length === 0) return 0;
+      const validData = data.filter(item => 
+        item[field] !== null && 
+        item[field] !== undefined && 
+        item.pickup_amount !== null && 
+        item.pickup_amount !== undefined
+      );
+      if (validData.length === 0) return 0;
+      
+      const totalWeight = validData.reduce((sum, item) => sum + Number(item.pickup_amount), 0);
+      if (totalWeight === 0) return 0;
+      
+      const weightedSum = validData.reduce((sum, item) => 
+        sum + (Number(item[field]) * Number(item.pickup_amount)), 0
+      );
+      
+      return weightedSum / totalWeight;
+    };
+
+    const formatNumber = (num) => Math.round(num).toLocaleString();
+    const formatDecimal = (num) => Number(num).toFixed(2);
+
+    return {
+      production: {
+        twoDay: formatNumber(calculateDailyAverage(twoDayData, 2)),
+        sevenDay: formatNumber(calculateDailyAverage(sevenDayData, 7)),
+        thirtyDay: formatNumber(calculateDailyAverage(thirtyDayData, 30))
+      },
+      quality: {
+        fat: formatDecimal(calculateWeightedAverage(sevenDayData, 'fat')),
+        protein: formatDecimal(calculateWeightedAverage(sevenDayData, 'protein')),
+        scc: formatNumber(calculateWeightedAverage(sevenDayData, 'somatic_cell_count')) // Already in thousands
+      },
+      counts: {
+        twoDayPickups: twoDayData?.length || 0,
+        sevenDayPickups: sevenDayData?.length || 0,
+        thirtyDayPickups: thirtyDayData?.length || 0
+      },
+      loadsPerDay: {
+        twoDay: formatDecimal((twoDayData?.length || 0) / 2),
+        sevenDay: formatDecimal((sevenDayData?.length || 0) / 7),
+        thirtyDay: formatDecimal((thirtyDayData?.length || 0) / 30)
+      }
+    };
+  } catch (error) {
+    console.error('❌ Error calculating averages:', error.message);
+    return null;
+  }
+}
+
+// Function to generate and send daily report
+async function generateDailyReport() {
+  console.log('📊 Generating daily milk production report...');
+  
+  try {
+    const averages = await getProductionAverages();
+    if (!averages) {
+      await sendNtfyNotification(
+        '🥛 Milk Report Error',
+        'Unable to generate daily report - database error',
+        'high'
+      );
+      return;
+    }
+
+    const date = new Date().toLocaleDateString('en-US', { 
+      timeZone: config.timezone,
+      month: 'short', 
+      day: 'numeric', 
+      year: 'numeric' 
+    });
+
+    // Determine SCC flag based on thresholds  
+    const sccValue = parseFloat(averages.quality.scc.replace(/,/g, ''));
+    let sccFlag = '';
+    if (sccValue > 185) {
+      sccFlag = ' 🔴'; // Red flag - high SCC
+    } else if (sccValue >= 150) {
+      sccFlag = ' 🟡'; // Yellow flag - moderate SCC
+    } else {
+      sccFlag = ' 🟢'; // Green flag - good SCC
+    }
+
+    const report = `Daily Milk Report - ${date}
+
+PRODUCTION AVERAGES
+• 2-Day:   ${averages.production.twoDay} lbs
+• 7-Day:   ${averages.production.sevenDay} lbs  
+• 30-Day:  ${averages.production.thirtyDay} lbs
+
+QUALITY (7-day avg)
+• Fat: ${averages.quality.fat}% | Protein: ${averages.quality.protein}%
+• SCC: ${averages.quality.scc}k${sccFlag}
+
+PICKUP ACTIVITY
+• Last 2 days: ${averages.counts.twoDayPickups} pickups (${averages.loadsPerDay.twoDay}/day)
+• Last 7 days: ${averages.counts.sevenDayPickups} pickups (${averages.loadsPerDay.sevenDay}/day)`;
+
+    await sendNtfyNotification('Daily Milk Report', report);
+    console.log('✅ Daily report sent successfully');
+    
+  } catch (error) {
+    console.error('❌ Report generation error:', error.message);
+    await sendNtfyNotification(
+      '🥛 Milk Report Error', 
+      `Report generation failed: ${error.message}`,
+      'high'
+    );
   }
 }
 
@@ -365,11 +545,23 @@ if (process.env.NODE_ENV === 'production') {
   
   // Schedule the scraper to run on cron schedule
   cron.schedule(config.cronSchedule, () => {
-    console.log('⏰ Cron job triggered');
+    console.log('⏰ Scraper cron job triggered');
     runScraper();
   }, {
     timezone: config.timezone
   });
+
+  // Schedule daily reports
+  if (config.ntfyEnabled) {
+    cron.schedule(config.reportSchedule, () => {
+      console.log('📊 Report cron job triggered');
+      generateDailyReport();
+    }, {
+      timezone: config.timezone
+    });
+    console.log(`📊 Daily reports scheduled: ${config.reportSchedule} (${config.timezone})`);
+    console.log(`📱 Reports will be sent to: ${config.ntfyUrl}`);
+  }
   
   // Start health check server
   const port = process.env.PORT || 3000;
