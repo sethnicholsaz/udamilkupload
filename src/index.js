@@ -18,7 +18,8 @@ const config = {
   reportSchedule: process.env.REPORT_SCHEDULE || "30 12 * * *", // Default: 12:30 PM daily
   timezone: process.env.TZ || "America/Phoenix",
   ntfyUrl: process.env.NTFY_URL || "https://ntfy.sh/adc-milk",
-  ntfyEnabled: process.env.NTFY_ENABLED !== "false"
+  ntfyEnabled: process.env.NTFY_ENABLED !== "false",
+  cronEnabled: process.env.CRON_ENABLED !== "false" // Disable cron with CRON_ENABLED=false
 };
 
 // Function to make direct API calls with authentication token
@@ -516,33 +517,75 @@ async function runScraper() {
   }
 }
 
-// Health check endpoint (if running as web service)
+// Health check and webhook endpoints
 const http = require('http');
-const server = http.createServer((req, res) => {
+const server = http.createServer(async (req, res) => {
+  // Health check endpoint
   if (req.url === '/health') {
     res.writeHead(200, { 'Content-Type': 'application/json' });
-    res.end(JSON.stringify({ 
-      status: 'healthy', 
+    res.end(JSON.stringify({
+      status: 'healthy',
       timestamp: new Date().toISOString(),
       nextRun: cron.validate(config.cronSchedule) ? 'scheduled' : 'invalid schedule'
     }));
-  } else {
-    res.writeHead(404);
-    res.end('Not Found');
+  }
+  // Webhook endpoint to trigger scraper immediately
+  else if (req.url === '/run' && req.method === 'POST') {
+    res.writeHead(202, { 'Content-Type': 'application/json' });
+    res.end(JSON.stringify({
+      status: 'accepted',
+      message: 'Scraper triggered',
+      timestamp: new Date().toISOString()
+    }));
+
+    // Run scraper asynchronously (don't wait for response)
+    console.log('🌐 Scraper triggered via webhook');
+    runScraper().catch(err => console.error('❌ Webhook scraper error:', err));
+  }
+  // Webhook endpoint to trigger report generation
+  else if (req.url === '/report' && req.method === 'POST') {
+    res.writeHead(202, { 'Content-Type': 'application/json' });
+    res.end(JSON.stringify({
+      status: 'accepted',
+      message: 'Report generation triggered',
+      timestamp: new Date().toISOString()
+    }));
+
+    // Generate report asynchronously
+    console.log('🌐 Report triggered via webhook');
+    generateDailyReport().catch(err => console.error('❌ Webhook report error:', err));
+  }
+  else {
+    res.writeHead(404, { 'Content-Type': 'application/json' });
+    res.end(JSON.stringify({
+      error: 'Not Found',
+      availableEndpoints: ['/health (GET)', '/run (POST)', '/report (POST)']
+    }));
   }
 });
 
 // Start the application
-if (process.env.NODE_ENV === 'production') {
+const port = process.env.PORT || 3000;
+
+// Start HTTP server (always available for health checks and webhooks)
+server.listen(port, () => {
+  console.log(`🌐 HTTP server running on port ${port}`);
+  console.log(`📍 Available endpoints:`);
+  console.log(`   GET  /health  - Health check`);
+  console.log(`   POST /run     - Trigger scraper immediately`);
+  console.log(`   POST /report  - Generate and send daily report`);
+});
+
+// Setup cron scheduling if enabled
+if (config.cronEnabled && process.env.NODE_ENV === 'production') {
   // Validate cron schedule first
   if (!cron.validate(config.cronSchedule)) {
     console.error(`❌ Invalid cron schedule: ${config.cronSchedule}`);
     process.exit(1);
   }
-  
-  console.log(`📅 Scheduling cron job: ${config.cronSchedule} (${config.timezone})`);
-  console.log(`🚫 Production mode - scraper will only run on schedule, not on startup`);
-  
+
+  console.log(`📅 Cron scheduling enabled: ${config.cronSchedule} (${config.timezone})`);
+
   // Schedule the scraper to run on cron schedule
   cron.schedule(config.cronSchedule, () => {
     console.log('⏰ Scraper cron job triggered');
@@ -562,17 +605,11 @@ if (process.env.NODE_ENV === 'production') {
     console.log(`📊 Daily reports scheduled: ${config.reportSchedule} (${config.timezone})`);
     console.log(`📱 Reports will be sent to: ${config.ntfyUrl}`);
   }
-  
-  // Start health check server
-  const port = process.env.PORT || 3000;
-  server.listen(port, () => {
-    console.log(`🌐 Health check server running on port ${port}`);
-    console.log(`🎯 Next scheduled run: ${config.cronSchedule}`);
-    console.log(`⚠️  Container will NOT run scraper immediately - waiting for scheduled time`);
-  });
-  
-} else {
+} else if (process.env.NODE_ENV !== 'production') {
   // Development mode - run immediately
   console.log('🔧 Development mode - running scraper immediately');
   runScraper();
+} else {
+  console.log(`🌐 Webhook mode - scraper will only run when triggered via POST /run`);
+  console.log(`💡 Tip: Use CRON_ENABLED=true to enable scheduled runs`);
 }
